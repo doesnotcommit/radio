@@ -133,8 +133,8 @@ func (u Usecase) Save(ctx context.Context) error {
 	handleErr := func(err error) error {
 		return fmt.Errorf("save tracks: %w", err)
 	}
+	sem := make(chan struct{}, 16)
 	if err := u.r.GetAllTracks(ctx, func(t tracks.Track) error {
-		sem := make(chan struct{}, 1)
 		sem <- struct{}{}
 		go u.getTrack(ctx, t, sem)
 		return nil
@@ -181,10 +181,11 @@ func (u Usecase) getTrack(ctx context.Context, t tracks.Track, sem <-chan struct
 		log.Print(err)
 		return
 	}
+	log.Printf("saved %s", filename)
 }
 
 func (u Usecase) mkdir(t tracks.Track) error {
-	name := strings.ReplaceAll(t.Channel, "/", "_")
+	name := cleanFilename(t.Channel)
 	if err := os.MkdirAll(u.cfg.DownloadsRootDir+"/"+name, 0700); errors.Is(err, os.ErrExist) {
 		return nil
 	} else if err != nil {
@@ -203,8 +204,17 @@ func isExist(name string) (bool, error) {
 }
 
 func (u Usecase) buildFileName(t tracks.Track) string {
+	channel := cleanFilename(t.Channel)
+	artist := cleanFilename(t.Artist)
+	album := cleanFilename(t.Album)
+	year := cleanFilename(t.Year)
+	title := cleanFilename(t.Title)
 	// artist_-_album_-_year_-_title
-	return fmt.Sprintf("%s/%s/%s_-_%s_-_%s_-_%s.mp4", u.cfg.DownloadsRootDir, t.Channel, t.Artist, t.Album, t.Year, t.Title)
+	return fmt.Sprintf("%s/%s/%s_-_%s_-_%s_-_%s.mp4", u.cfg.DownloadsRootDir, channel, artist, album, year, title)
+}
+
+func cleanFilename(n string) string {
+	return strings.ReplaceAll(n, "/", "_")
 }
 
 func (u Usecase) downloadFile(link string) (io.ReadCloser, error) {
