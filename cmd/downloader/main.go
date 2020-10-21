@@ -54,5 +54,5 @@ func main() {
 		<-sigint
 		cancel()
 	}()
-	mustBeNil(u.Rip(ctx))
+	mustBeNil(u.Save(ctx))
 }

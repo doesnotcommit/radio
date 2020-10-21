@@ -93,6 +93,51 @@ func (s *Sqlite) SaveChannels(ctx context.Context, chs ...tracks.Channel) error 
 
 }
 
+func (s *Sqlite) GetAllTracks(ctx context.Context, run func(t tracks.Track) error) error {
+	defer s.rlock()()
+	handleErr := func(err error) error {
+		return fmt.Errorf("sqlite: get all tracks: %w", err)
+	}
+	const q = `SELECT
+			c.name,
+			t.artist,
+			t.album,
+			t.title,
+			t.duration,
+			t.year,
+			t.primary_link,
+			t.secondary_link
+		FROM track t
+		JOIN channel c ON c.data_id = t.channel`
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return handleErr(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
+		var t tracks.Track
+		if err := rows.Scan(
+			&t.Channel, &t.Artist, &t.Album,
+			&t.Title, &t.Duration, &t.Year,
+			&t.PrimaryLink, &t.SecondaryLink,
+		); err != nil {
+			return handleErr(err)
+		}
+		if err := run(t); err != nil {
+			return handleErr(err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return handleErr(err)
+	}
+	return nil
+}
+
 func (s *Sqlite) saveChannel(ctx context.Context, ch tracks.Channel) error {
 	handleErr := func(err error) error {
 		return fmt.Errorf("sqlite: save channel: %w", err)

@@ -5,25 +5,39 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"os"
+	"strings"
 	"sync"
 )
 
-type Usecase struct {
-	tf tracks.TracksFetcher
-	cf tracks.ChannelFetcher
-	r  tracks.Repo
+type Cfg struct {
+	DownloadsRootDir string
 }
 
-func New(tf tracks.TracksFetcher, cf tracks.ChannelFetcher, r tracks.Repo) Usecase {
+type Usecase struct {
+	tf  tracks.TracksFetcher
+	cf  tracks.ChannelFetcher
+	r   tracks.Repo
+	c   *http.Client
+	cfg Cfg
+}
+
+func New(cfg Cfg, rt http.RoundTripper, tf tracks.TracksFetcher, cf tracks.ChannelFetcher, r tracks.Repo) Usecase {
 	return Usecase{
 		tf: tf,
 		cf: cf,
 		r:  r,
+		c: &http.Client{
+			Transport: rt,
+		},
+		cfg: cfg,
 	}
 }
 
-func (u Usecase) Do(ctx context.Context) error {
+func (u Usecase) Rip(ctx context.Context) error {
 	handleErr := func(err error) error {
 		return fmt.Errorf("usecase: do: %w", err)
 	}
@@ -113,4 +127,97 @@ func (u Usecase) trackExists(trck tracks.Track) (bool, error) {
 		return handleErr(err)
 	}
 	return true, nil
+}
+
+func (u Usecase) Save(ctx context.Context) error {
+	handleErr := func(err error) error {
+		return fmt.Errorf("save tracks: %w", err)
+	}
+	if err := u.r.GetAllTracks(ctx, func(t tracks.Track) error {
+		sem := make(chan struct{}, 1)
+		sem <- struct{}{}
+		go u.getTrack(ctx, t, sem)
+		return nil
+	}); err != nil {
+		return handleErr(err)
+	}
+	return nil
+}
+
+func (u Usecase) getTrack(ctx context.Context, t tracks.Track, sem <-chan struct{}) {
+	defer func() {
+		<-sem
+	}()
+	filename := u.buildFileName(t)
+	exists, err := isExist(filename)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	if exists {
+		log.Printf("track %q already exists", filename)
+		return
+	}
+	if err := u.mkdir(t); err != nil {
+		log.Print(err)
+		return
+	}
+	outFile, err := os.Create(filename)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	defer outFile.Close()
+	from, err := u.downloadFile(t.PrimaryLink)
+	if err != nil {
+		from, err = u.downloadFile(t.SecondaryLink)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+	}
+	defer from.Close()
+	if _, err := io.Copy(outFile, from); err != nil {
+		log.Print(err)
+		return
+	}
+}
+
+func (u Usecase) mkdir(t tracks.Track) error {
+	name := strings.ReplaceAll(t.Channel, "/", "_")
+	if err := os.MkdirAll(u.cfg.DownloadsRootDir+"/"+name, 0700); errors.Is(err, os.ErrExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
+func isExist(name string) (bool, error) {
+	if _, err := os.Stat(name); os.IsNotExist(err) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (u Usecase) buildFileName(t tracks.Track) string {
+	// artist_-_album_-_year_-_title
+	return fmt.Sprintf("%s/%s/%s_-_%s_-_%s_-_%s.mp4", u.cfg.DownloadsRootDir, t.Channel, t.Artist, t.Album, t.Year, t.Title)
+}
+
+func (u Usecase) downloadFile(link string) (io.ReadCloser, error) {
+	handleErr := func(err error) (io.ReadCloser, error) {
+		return nil, fmt.Errorf("download file: %w", err)
+	}
+	resp, err := u.c.Get(link)
+	if err != nil {
+		return handleErr(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return handleErr(fmt.Errorf("response status not ok: %q", resp.Status))
+	}
+	return resp.Body, nil
 }

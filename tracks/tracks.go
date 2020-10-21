@@ -37,6 +37,7 @@ type Repo interface {
 	SaveTracks(ctx context.Context, trks ...Track) error
 	SaveChannels(ctx context.Context, chs ...Channel) error
 	GetTrackByLink(link string) (Track, error)
+	GetAllTracks(ctx context.Context, run func(t Track) error) error
 }
 
 var (
