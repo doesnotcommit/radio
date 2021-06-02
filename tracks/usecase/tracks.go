@@ -210,7 +210,7 @@ func (u Usecase) buildFileName(t tracks.Track) string {
 	year := cleanFilename(t.Year)
 	title := cleanFilename(t.Title)
 	// artist_-_album_-_year_-_title
-	return fmt.Sprintf("%s/%s/%s_-_%s_-_%s_-_%s.mp4", u.cfg.DownloadsRootDir, channel, artist, album, year, title)
+	return fmt.Sprintf("%s/%s/%s_-_%s_-_%s_-_%s.m4a", u.cfg.DownloadsRootDir, channel, artist, album, year, title)
 }
 
 func cleanFilename(n string) string {
