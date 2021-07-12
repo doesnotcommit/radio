@@ -7,6 +7,7 @@ import (
 	"accu/tracks/usecase"
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,6 +18,8 @@ import (
 const accuURI = "https://www.accuradio.com/playlist/json/"
 
 const defaultCategoryURI = "https://www.accuradio.com/indie-rock/"
+
+const defaultSqliteName = "tracks"
 
 func mustBeNil(err error) {
 	if err != nil {
@@ -37,7 +40,8 @@ func main() {
 		cfCfg.BaseURI = os.Args[1]
 	}
 	cf := channelfetcher.NewChannelFetcher(rt, cfCfg)
-	db, err := sql.Open("sqlite3", "file:tracks.sqlite?mode=rwc&cache=shared")
+	sqliteName := defaultSqliteName
+	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s.sqlite?mode=rwc&cache=shared", sqliteName))
 	mustBeNil(err)
 	defer db.Close()
 	r := repo.New(db)
