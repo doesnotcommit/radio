@@ -46,13 +46,14 @@ func (u Usecase) Rip(ctx context.Context) error {
 		return handleErr(err)
 	}
 	wg := sync.WaitGroup{}
+	wg.Add(len(channels))
 	for _, ch := range channels {
 		if err := u.r.SaveChannels(ctx, ch); err != nil {
 			return handleErr(err)
 		}
-		wg.Add(1)
 		go func(ch tracks.Channel) {
 			var noNewTracks int
+			defer wg.Done()
 		loop:
 			for {
 				log.Printf("started fetching tracks for channel %s - %s", ch.DataId, ch.Name)
@@ -87,7 +88,6 @@ func (u Usecase) Rip(ctx context.Context) error {
 				log.Printf("fetched tracks for channel %s - %s", ch.DataId, ch.Name)
 			}
 			log.Printf("exit fetching tracks for channel %s - %s", ch.DataId, ch.Name)
-			wg.Done()
 		}(ch)
 	}
 	wg.Wait()
