@@ -1,6 +1,7 @@
 package main
 
 import (
+	"accu/cmd"
 	"accu/drivers/channelfetcher"
 	"accu/drivers/fetcher"
 	"accu/drivers/repo"
@@ -8,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,41 +17,44 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const accuURI = "https://www.accuradio.com/playlist/json/"
-
-const defaultCategoryURI = "https://www.accuradio.com/indie-rock/"
-
-const defaultSqliteName = "tracks"
-
-func mustBeNil(err error) {
-	if err != nil {
-		panic(err)
+func main() {
+	l := log.Default()
+	if err := run(l); err != nil {
+		l.Println(err)
+		os.Exit(1)
 	}
 }
 
-func main() {
+func run(l *log.Logger) error {
+	handleErr := func(err error) error {
+		return fmt.Errorf("run: %w", err)
+	}
 	rt := &http.Transport{}
 	tfCfg := fetcher.Cfg{
-		BaseURI: accuURI,
+		BaseURI: cmd.DefaultAccuURI,
 	}
 	tlf := fetcher.NewTrackListFetcher(rt, tfCfg)
 	cfCfg := channelfetcher.Cfg{
-		BaseURI: defaultCategoryURI,
+		BaseURI: cmd.DefaultCategoryURI,
 	}
 	if len(os.Args) == 2 {
 		cfCfg.BaseURI = os.Args[1]
 	}
 	cf := channelfetcher.NewChannelFetcher(rt, cfCfg)
-	sqliteName := defaultSqliteName
+	sqliteName := cmd.DefaultSqliteName
 	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s.sqlite?mode=rwc&cache=shared", sqliteName))
-	mustBeNil(err)
+	if err != nil {
+		return handleErr(err)
+	}
 	defer db.Close()
 	r := repo.New(db)
-	mustBeNil(r.Create())
+	if err := r.Create(); err != nil {
+		return handleErr(err)
+	}
 	ucfg := usecase.Cfg{
 		DownloadsRootDir: "downloads",
 	}
-	u := usecase.New(ucfg, rt, tlf, cf, r)
+	u := usecase.New(ucfg, rt, tlf, cf, r, l)
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	go func() {
@@ -58,5 +63,8 @@ func main() {
 		<-sigint
 		cancel()
 	}()
-	mustBeNil(u.Save(ctx))
+	if err := u.Save(ctx); err != nil {
+		return handleErr(err)
+	}
+	return nil
 }

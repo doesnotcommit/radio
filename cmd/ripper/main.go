@@ -1,6 +1,7 @@
 package main
 
 import (
+	"accu/cmd"
 	"accu/drivers/channelfetcher"
 	"accu/drivers/fetcher"
 	"accu/drivers/repo"
@@ -16,12 +17,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const accuURI = "https://www.accuradio.com/playlist/json/"
-
-const defaultCategoryURI = "https://www.accuradio.com/indie-rock/"
-
-const defaultSqliteName = "tracks"
-
 func main() {
 	l := log.Default()
 	if err := run(l); err != nil {
@@ -36,17 +31,17 @@ func run(l *log.Logger) error {
 	}
 	rt := &http.Transport{}
 	tfCfg := fetcher.Cfg{
-		BaseURI: accuURI,
+		BaseURI: cmd.DefaultAccuURI,
 	}
 	tlf := fetcher.NewTrackListFetcher(rt, tfCfg)
 	cfCfg := channelfetcher.Cfg{
-		BaseURI: defaultCategoryURI,
+		BaseURI: cmd.DefaultCategoryURI,
 	}
 	if len(os.Args) == 2 {
 		cfCfg.BaseURI = os.Args[1]
 	}
 	cf := channelfetcher.NewChannelFetcher(rt, cfCfg)
-	sqliteName := defaultSqliteName
+	sqliteName := cmd.DefaultSqliteName
 	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s.sqlite?mode=rwc&cache=shared", sqliteName))
 	if err != nil {
 		return handleErr(err)
@@ -54,6 +49,9 @@ func run(l *log.Logger) error {
 	defer db.Close()
 	r := repo.New(db)
 	if err != nil {
+		return handleErr(err)
+	}
+	if err := r.Create(); err != nil {
 		return handleErr(err)
 	}
 	ucfg := usecase.Cfg{
