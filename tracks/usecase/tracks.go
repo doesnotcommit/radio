@@ -22,18 +22,20 @@ type Usecase struct {
 	cf  tracks.ChannelFetcher
 	r   tracks.Repo
 	c   *http.Client
+	l   *log.Logger
 	cfg Cfg
 }
 
-func New(cfg Cfg, rt http.RoundTripper, tf tracks.TracksFetcher, cf tracks.ChannelFetcher, r tracks.Repo) Usecase {
+func New(cfg Cfg, rt http.RoundTripper, tf tracks.TracksFetcher, cf tracks.ChannelFetcher, r tracks.Repo, l *log.Logger) Usecase {
 	return Usecase{
-		tf: tf,
-		cf: cf,
-		r:  r,
-		c: &http.Client{
+		tf,
+		cf,
+		r,
+		&http.Client{
 			Transport: rt,
 		},
-		cfg: cfg,
+		l,
+		cfg,
 	}
 }
 
@@ -56,7 +58,7 @@ func (u Usecase) Rip(ctx context.Context) error {
 			defer wg.Done()
 		loop:
 			for {
-				log.Printf("started fetching tracks for channel %s - %s", ch.DataId, ch.Name)
+				u.l.Printf("started fetching tracks for channel %s - %s", ch.DataId, ch.Name)
 				select {
 				case <-ctx.Done():
 					break loop
@@ -66,12 +68,12 @@ func (u Usecase) Rip(ctx context.Context) error {
 					Channel: ch.DataId,
 				})
 				if err != nil {
-					log.Print(err)
+					u.l.Print(err)
 					continue
 				}
 				filtered, err := u.filterTracks(trcks)
 				if err != nil {
-					log.Print(err)
+					u.l.Print(err)
 					continue
 				}
 				if len(filtered) == 0 {
@@ -83,11 +85,11 @@ func (u Usecase) Rip(ctx context.Context) error {
 					break loop
 				}
 				if err := u.r.SaveTracks(ctx, filtered...); err != nil {
-					log.Print(err)
+					u.l.Print(err)
 				}
-				log.Printf("fetched tracks for channel %s - %s", ch.DataId, ch.Name)
+				u.l.Printf("fetched tracks for channel %s - %s", ch.DataId, ch.Name)
 			}
-			log.Printf("exit fetching tracks for channel %s - %s", ch.DataId, ch.Name)
+			u.l.Printf("exit fetching tracks for channel %s - %s", ch.DataId, ch.Name)
 		}(ch)
 	}
 	wg.Wait()
@@ -151,20 +153,20 @@ func (u Usecase) getTrack(ctx context.Context, t tracks.Track, sem <-chan struct
 	filename := u.buildFileName(t)
 	exists, err := isExist(filename)
 	if err != nil {
-		log.Print(err)
+		u.l.Print(err)
 		return
 	}
 	if exists {
-		log.Printf("track %q already exists", filename)
+		u.l.Printf("track %q already exists", filename)
 		return
 	}
 	if err := u.mkdir(t); err != nil {
-		log.Print(err)
+		u.l.Print(err)
 		return
 	}
 	outFile, err := os.Create(filename)
 	if err != nil {
-		log.Print(err)
+		u.l.Print(err)
 		return
 	}
 	defer outFile.Close()
@@ -172,16 +174,16 @@ func (u Usecase) getTrack(ctx context.Context, t tracks.Track, sem <-chan struct
 	if err != nil {
 		from, err = u.downloadFile(t.SecondaryLink)
 		if err != nil {
-			log.Print(err)
+			u.l.Print(err)
 			return
 		}
 	}
 	defer from.Close()
 	if _, err := io.Copy(outFile, from); err != nil {
-		log.Print(err)
+		u.l.Print(err)
 		return
 	}
-	log.Printf("saved %s", filename)
+	u.l.Printf("saved %s", filename)
 }
 
 func (u Usecase) mkdir(t tracks.Track) error {

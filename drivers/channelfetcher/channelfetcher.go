@@ -3,7 +3,7 @@ package channelfetcher
 import (
 	"accu/tracks"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"regexp"
 )
@@ -37,7 +37,7 @@ func (cf ChannelFetcher) FetchChannels() ([]tracks.Channel, error) {
 		return handleErr(err)
 	}
 	defer resp.Body.Close()
-	rawPage, err := ioutil.ReadAll(resp.Body)
+	rawPage, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return handleErr(err)
 	}
