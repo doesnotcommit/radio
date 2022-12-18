@@ -47,7 +47,7 @@ func run(l *log.Logger) error {
 		return handleErr(err)
 	}
 	defer db.Close()
-	r := repo.New(db)
+	r := repo.NewSqlite(db)
 	if err != nil {
 		return handleErr(err)
 	}

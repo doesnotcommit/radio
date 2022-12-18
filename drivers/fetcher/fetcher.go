@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"accu/tracks"
 )
@@ -64,14 +65,15 @@ type rawTrack struct {
 	Duration float64
 }
 
-func (r *rawTrack) toTrack(channel string) tracks.Track {
+func (r rawTrack) toTrack(channel string) tracks.Track {
+	year, _ := strconv.Atoi(r.Album.Year)
 	return tracks.Track{
 		Channel:       channel,
 		Artist:        r.TrackArtist,
 		Album:         r.Album.Title,
 		Title:         r.Title,
 		Duration:      int(r.Duration),
-		Year:          r.Album.Year,
+		Year:          year,
 		PrimaryLink:   r.Primary + r.Fn + ".m4a",
 		SecondaryLink: r.Secondary + r.Fn + ".m4a",
 	}

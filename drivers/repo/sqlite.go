@@ -15,7 +15,7 @@ type Sqlite struct {
 	db *sql.DB
 }
 
-func New(db *sql.DB) *Sqlite {
+func NewSqlite(db *sql.DB) *Sqlite {
 	return &Sqlite{
 		db: db,
 	}
@@ -90,10 +90,39 @@ func (s *Sqlite) SaveChannels(ctx context.Context, chs ...tracks.Channel) error 
 		return handleErr(err)
 	}
 	return nil
-
 }
 
-func (s *Sqlite) GetAllTracks(ctx context.Context, run func(t tracks.Track) error) error {
+func (s *Sqlite) GetChannels(ctx context.Context) ([]tracks.Channel, error) {
+	defer s.lock()()
+	handleErr := func(err error) ([]tracks.Channel, error) {
+		return nil, fmt.Errorf("sqlite: get channels: %w", err)
+	}
+	const q = "SELECT c.name, c.data_id FROM channel c"
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return handleErr(err)
+	}
+	defer rows.Close()
+	var cc []tracks.Channel
+	for rows.Next() {
+		select {
+		case <-ctx.Done():
+			return handleErr(ctx.Err())
+		default:
+		}
+		var c tracks.Channel
+		if err := rows.Scan(&c.Name, &c.DataId); err != nil {
+			return handleErr(err)
+		}
+		cc = append(cc, c)
+	}
+	if err := rows.Err(); err != nil {
+		return handleErr(err)
+	}
+	return cc, nil
+}
+
+func (s *Sqlite) GetAllTracks(ctx context.Context, run func(ctx context.Context, t tracks.Track) error) error {
 	defer s.rlock()()
 	handleErr := func(err error) error {
 		return fmt.Errorf("sqlite: get all tracks: %w", err)
@@ -117,7 +146,7 @@ func (s *Sqlite) GetAllTracks(ctx context.Context, run func(t tracks.Track) erro
 	for rows.Next() {
 		select {
 		case <-ctx.Done():
-			return nil
+			return handleErr(ctx.Err())
 		default:
 		}
 		var t tracks.Track
@@ -128,7 +157,7 @@ func (s *Sqlite) GetAllTracks(ctx context.Context, run func(t tracks.Track) erro
 		); err != nil {
 			return handleErr(err)
 		}
-		if err := run(t); err != nil {
+		if err := run(ctx, t); err != nil {
 			return handleErr(err)
 		}
 	}
@@ -166,7 +195,7 @@ func (s *Sqlite) saveTrack(ctx context.Context, track tracks.Track) error {
 	return nil
 }
 
-func (s *Sqlite) GetTrackByLink(link string) (tracks.Track, error) {
+func (s *Sqlite) GetTrackByLink(ctx context.Context, link string) (tracks.Track, error) {
 	defer s.rlock()()
 	handleErr := func(err error) (tracks.Track, error) {
 		return tracks.Track{}, fmt.Errorf("sqlite: get track: %w", err)
@@ -180,7 +209,7 @@ func (s *Sqlite) GetTrackByLink(link string) (tracks.Track, error) {
 		WHERE primary_link = $1
 		OR secondary_link = $1`
 	var t tracks.Track
-	if err := s.db.QueryRow(q, link).Scan(
+	if err := s.db.QueryRowContext(ctx, q, link).Scan(
 		&t.Channel, &t.Artist, &t.Album,
 		&t.Title, &t.Duration, &t.Year,
 		&t.PrimaryLink, &t.SecondaryLink,

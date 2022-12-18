@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -71,7 +72,7 @@ func (u Usecase) Rip(ctx context.Context) error {
 					u.l.Print(err)
 					continue
 				}
-				filtered, err := u.filterTracks(trcks)
+				filtered, err := u.filterTracks(ctx, trcks)
 				if err != nil {
 					u.l.Print(err)
 					continue
@@ -87,7 +88,7 @@ func (u Usecase) Rip(ctx context.Context) error {
 				if err := u.r.SaveTracks(ctx, filtered...); err != nil {
 					u.l.Print(err)
 				}
-				u.l.Printf("fetched tracks for channel %s - %s", ch.DataId, ch.Name)
+				u.l.Printf("fetched %d tracks for channel %s - %s", len(filtered), ch.DataId, ch.Name)
 			}
 			u.l.Printf("exit fetching tracks for channel %s - %s", ch.DataId, ch.Name)
 		}(ch)
@@ -96,13 +97,13 @@ func (u Usecase) Rip(ctx context.Context) error {
 	return nil
 }
 
-func (u Usecase) filterTracks(trcks []tracks.Track) ([]tracks.Track, error) {
+func (u Usecase) filterTracks(ctx context.Context, trcks []tracks.Track) ([]tracks.Track, error) {
 	handleErr := func(err error) ([]tracks.Track, error) {
 		return nil, fmt.Errorf("filter tracks: %w", err)
 	}
 	result := make([]tracks.Track, 0, len(trcks))
 	for _, trck := range trcks {
-		exists, err := u.trackExists(trck)
+		exists, err := u.trackExists(ctx, trck)
 		if err != nil {
 			return handleErr(err)
 		}
@@ -114,16 +115,16 @@ func (u Usecase) filterTracks(trcks []tracks.Track) ([]tracks.Track, error) {
 	return result, nil
 }
 
-func (u Usecase) trackExists(trck tracks.Track) (bool, error) {
+func (u Usecase) trackExists(ctx context.Context, trck tracks.Track) (bool, error) {
 	handleErr := func(err error) (bool, error) {
 		return false, fmt.Errorf("track exists: %w", err)
 	}
-	if _, err := u.r.GetTrackByLink(trck.PrimaryLink); errors.Is(err, tracks.ErrNotFound) {
+	if _, err := u.r.GetTrackByLink(ctx, trck.PrimaryLink); errors.Is(err, tracks.ErrNotFound) {
 		return false, nil
 	} else if err != nil {
 		return handleErr(err)
 	}
-	if _, err := u.r.GetTrackByLink(trck.SecondaryLink); errors.Is(err, tracks.ErrNotFound) {
+	if _, err := u.r.GetTrackByLink(ctx, trck.SecondaryLink); errors.Is(err, tracks.ErrNotFound) {
 		return false, nil
 	} else if err != nil {
 		return handleErr(err)
@@ -136,7 +137,7 @@ func (u Usecase) Save(ctx context.Context) error {
 		return fmt.Errorf("save tracks: %w", err)
 	}
 	sem := make(chan struct{}, 16)
-	if err := u.r.GetAllTracks(ctx, func(t tracks.Track) error {
+	if err := u.r.GetAllTracks(ctx, func(ctx context.Context, t tracks.Track) error {
 		sem <- struct{}{}
 		go u.getTrack(ctx, t, sem)
 		return nil
@@ -209,7 +210,7 @@ func (u Usecase) buildFileName(t tracks.Track) string {
 	channel := cleanFilename(t.Channel)
 	artist := cleanFilename(t.Artist)
 	album := cleanFilename(t.Album)
-	year := cleanFilename(t.Year)
+	year := strconv.Itoa(t.Year)
 	title := cleanFilename(t.Title)
 	// artist_-_album_-_year_-_title
 	return fmt.Sprintf("%s/%s/%s_-_%s_-_%s_-_%s.m4a", u.cfg.DownloadsRootDir, channel, artist, album, year, title)

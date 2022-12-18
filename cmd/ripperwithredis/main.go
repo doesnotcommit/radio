@@ -7,7 +7,6 @@ import (
 	"accu/drivers/repo"
 	"accu/tracks/usecase"
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -41,29 +40,28 @@ func run(l *log.Logger) error {
 		cfCfg.BaseURI = os.Args[1]
 	}
 	cf := channelfetcher.NewChannelFetcher(rt, cfCfg)
-	sqliteName := cmd.DefaultSqliteName
-	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s.sqlite?mode=rwc&cache=shared", sqliteName))
+	ctx := context.Background()
+	redisClient, cleanupRedis, err := repo.NewRedisClient(ctx, "localhost", 6379, l)
 	if err != nil {
 		return handleErr(err)
 	}
-	defer db.Close()
-	r := repo.NewSqlite(db)
-	if err := r.Create(); err != nil {
+	defer cleanupRedis()
+	r := repo.NewRedis(redisClient, l)
+	if err != nil {
 		return handleErr(err)
 	}
 	ucfg := usecase.Cfg{
-		DownloadsRootDir: "downloads",
+		DownloadsRootDir: "downloads", // TODO this is irrelevant, separate usecases
 	}
 	u := usecase.New(ucfg, rt, tlf, cf, r, l)
-	ctx := context.Background()
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancelCtx := context.WithCancel(ctx)
 	go func() {
-		sigint := make(chan os.Signal, 1)
-		signal.Notify(sigint, os.Interrupt)
-		<-sigint
-		cancel()
+		childCtx, cancelChildCtx := signal.NotifyContext(ctx, os.Interrupt)
+		defer cancelChildCtx()
+		<-childCtx.Done()
+		cancelCtx()
 	}()
-	if err := u.Save(ctx); err != nil {
+	if err := u.Rip(ctx); err != nil {
 		return handleErr(err)
 	}
 	return nil

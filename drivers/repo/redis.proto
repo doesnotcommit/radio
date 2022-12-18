@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+option go_package = "./protos";
+
+// protoc --go_out=. redis.proto
+
+message Track {
+	string channel = 1;
+	string artist = 2;
+	string album = 3;
+	string title = 4;
+	int32 year = 5;
+	string primaryLink = 6;
+	string secondaryLink = 7;
+	int32 duration = 8;
+}
